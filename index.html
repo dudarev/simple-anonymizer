@@ -93,6 +93,21 @@
 <div class="container">
     <h1>Text Anonymizer</h1>
 
+    <div class="description">
+        <p>Welcome to the Simple Anonymizer! This tool helps you anonymize sensitive information in text by applying built-in and custom redaction patterns. You can use it to remove personal data, confidential information, or any other text patterns you define.</p>
+        <p>Below are the default patterns used for anonymization:</p>
+        <ul>
+            <li><strong>Email:</strong> Matches email addresses (e.g., user@example.com).</li>
+            <li><strong>Phone Number:</strong> Matches various phone number formats, including optional country codes.</li>
+            <li><strong>SSN:</strong> Matches US Social Security Numbers (e.g., 123-45-6789).</li>
+            <li><strong>Credit Card Like:</strong> Matches sequences of 13-19 digits resembling credit card numbers.</li>
+            <li><strong>IBAN Like:</strong> Matches basic IBAN structures (e.g., GB29NWBK60161331926819).</li>
+            <li><strong>IPv4 Address:</strong> Matches IPv4 addresses (e.g., 192.168.0.1).</li>
+            <li><strong>Long Number Sequence:</strong> Matches sequences of 9 or more digits.</li>
+        </ul>
+        <p>For more details, visit the <a href="https://github.com/dudarev/simple-anonymizer" target="_blank">GitHub repository</a>. You can read the README, clone the project, and customize it for your needs.</p>
+    </div>
+
     <div>
         <label for="inputText">Paste Text Here:</label>
         <textarea id="inputText" rows="10" placeholder="Enter or paste the text you want to anonymize..."></textarea>
