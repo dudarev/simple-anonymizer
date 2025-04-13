@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Anonymizer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #444;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        textarea {
+            width: 100%;
+            box-sizing: border-box; /* Include padding and border in element's total width/height */
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: background-color 0.3s ease;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #outputContainer {
+            margin-top: 20px;
+        }
+        #outputText {
+            background-color: #e9ecef;
+            border: 1px solid #ccc;
+            min-height: 150px;
+            padding: 10px;
+            white-space: pre-wrap; /* Preserve whitespace and line breaks */
+            word-wrap: break-word; /* Break long words */
+            border-radius: 4px;
+            font-family: monospace; /* Often better for seeing structure */
+        }
+        .redacted {
+            /* You can style the replacement text if you want */
+            /* For example, make it red: */
+            /* color: red; */
+            font-weight: bold;
+            /* Or add a background */
+            /* background-color: yellow; */
+        }
+        .error-message {
+            color: red;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .regex-info {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Text Anonymizer</h1>
+
+    <div>
+        <label for="inputText">Paste Text Here:</label>
+        <textarea id="inputText" rows="10" placeholder="Enter or paste the text you want to anonymize..."></textarea>
+    </div>
+
+    <div>
+        <label for="customRegexes">Custom Redaction Patterns (Regular Expressions, one per line):</label>
+        <textarea id="customRegexes" rows="5" placeholder="e.g., \bProject[\s_]?Confidential\b/gi
+e.g., /ACME-\d{4}/g"></textarea>
+        <div class="regex-info">
+            Enter valid JavaScript regular expressions, one per line. You can include flags (like /pattern/gi).
+            If no flags are provided, 'g' (global) will be assumed.
+        </div>
+    </div>
+
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+
+    <button id="anonymizeButton">Anonymize Text</button>
+
+    <div id="outputContainer">
+        <label for="outputText">Anonymized Text:</label>
+        <div id="outputText"></div>
+    </div>
+
+</div>
+
+<script>
+    const inputText = document.getElementById('inputText');
+    const customRegexesInput = document.getElementById('customRegexes');
+    const anonymizeButton = document.getElementById('anonymizeButton');
+    const outputText = document.getElementById('outputText');
+    const errorMessageDiv = document.getElementById('errorMessage');
+
+    // --- Configuration ---
+    // const REDACTION_PLACEHOLDER = "[REDACTED]"; // Old placeholder
+    const CUSTOM_REDACTION_PLACEHOLDER = "[CUSTOM DATA]"; // Placeholder for custom regex matches
+    // const REDACTION_PLACEHOLDER = "***"; // Alternative
+    // const REDACTION_PLACEHOLDER = '<span class="redacted">***</span>'; // Alternative with styling
+
+    // --- Built-in Regular Expressions for PII ---
+    // Note: These are examples and may need refinement for specific use cases or locales.
+    // They prioritize common formats and may have false positives/negatives.
+    const builtInRules = [
+        // Email addresses
+        { name: "Email", pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi },
+        // Phone numbers (various common formats, includes optional country code)
+        { name: "Phone Number", pattern: /\b\(?\+?[0-9]{1,3}\)?[-.\s]?\(?[0-9]{2,4}\)?[-.\s]?[0-9]{3,4}[-.\s]?[0-9]{3,4}\b/g },
+        // Social Security Numbers (US format)
+        { name: "SSN", pattern: /\b\d{3}-\d{2}-\d{4}\b/g },
+        // Credit Card Numbers (basic pattern, covers common lengths, detects sequences of 13-19 digits, possibly with spaces/dashes)
+        // WARNING: Simple patterns like this can have high false positives (e.g., other long numbers).
+        { name: "Credit Card Like", pattern: /\b(?:\d[ -]*?){13,19}\b/g },
+        // Basic IBAN structure (Starts with 2 letters, 2 digits, then alphanumeric) - Simplistic
+        { name: "IBAN Like", pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7,28}\b/g },
+        // IPv4 Addresses
+        { name: "IPv4 Address", pattern: /\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g },
+        // Simple detection of common keywords suggesting company/org names (often followed by Ltd, Inc, Corp, LLC etc.)
+        // VERY basic, high chance of false positives/negatives. Included as an example.
+        // { name: "Potential Company Name", pattern: /\b[A-Z][A-Za-z]+(?:[\s-][A-Z][A-Za-z]+)*\s(?:Inc\.?|Ltd\.?|Corp\.?|LLC|GmbH)\b/g },
+        // Names (Capitalized words) - EXTREMELY prone to false positives. Disabled by default. Use custom regex if needed.
+        // { name: "Potential Name", pattern: /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b/g },
+        // Generic long number sequence (potential ID, Account# - high false positive risk if CC# pattern isn't specific enough)
+        { name: "Long Number Sequence", pattern: /\b\d{9,}\b/g } // Catches sequences of 9+ digits not already caught
+    ];
+
+    anonymizeButton.addEventListener('click', () => {
+        let originalText = inputText.value;
+        let processedText = originalText;
+        errorMessageDiv.style.display = 'none'; // Hide previous errors
+        errorMessageDiv.textContent = '';
+
+        let hadError = false;
+
+        try {
+            // 1. Apply Built-in Rules
+            builtInRules.forEach(rule => {
+                // Check if the pattern is valid (should always be for built-in)
+                if (rule.pattern instanceof RegExp) {
+                    // Replace with the rule name in uppercase brackets
+                    const replacement = `[${rule.name.toUpperCase()}]`;
+                    processedText = processedText.replace(rule.pattern, replacement);
+                } else {
+                    console.warn(`Skipping invalid built-in rule: ${rule.name}`);
+                }
+            });
+
+            // 2. Apply Custom Rules
+            const customRegexStrings = customRegexesInput.value
+                .split('\n')
+                .map(s => s.trim())
+                .filter(s => s !== '');
+
+            customRegexStrings.forEach((regexStr, index) => {
+                if (hadError) return; // Stop processing custom rules if an error occurred
+
+                try {
+                    let regex;
+                    // Check if the user provided delimiters and flags (e.g., /pattern/gi)
+                    const match = regexStr.match(/^\/(.+)\/([gimyus]*)$/);
+                    if (match) {
+                        // User provided full regex literal syntax
+                        const pattern = match[1];
+                        const flags = match[2];
+                        // Ensure global flag 'g' is present for complete replacement
+                        regex = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g');
+                    } else {
+                        // User provided only the pattern string, assume global flag 'g'
+                        regex = new RegExp(regexStr, 'g');
+                    }
+                     // Replace custom matches with the specific placeholder
+                     processedText = processedText.replace(regex, CUSTOM_REDACTION_PLACEHOLDER);
+                } catch (e) {
+                    console.error(`Invalid custom regex at line ${index + 1}: "${regexStr}"`, e);
+                    errorMessageDiv.textContent = `Error in custom regex at line ${index + 1}: "${regexStr}". Please check its format. ${e.message}`;
+                    errorMessageDiv.style.display = 'block';
+                    hadError = true; // Set flag to stop further processing
+                }
+            });
+
+        } catch (error) {
+            // Catch potential errors during the main processing (less likely now with per-regex try-catch)
+            console.error("An error occurred during anonymization:", error);
+            errorMessageDiv.textContent = `An unexpected error occurred: ${error.message}`;
+            errorMessageDiv.style.display = 'block';
+            hadError = true;
+        }
+
+        // 3. Display Result (only if no errors occurred)
+        if (!hadError) {
+            // Using textContent is safer against XSS if REDACTION_PLACEHOLDER contained HTML,
+            // but innerHTML preserves line breaks correctly when using pre-wrap CSS.
+            // Since our placeholder is simple text, innerHTML is okay here.
+            outputText.innerHTML = processedText;
+        } else {
+            // Optionally clear the output or show an error message there too
+             outputText.innerHTML = '<span style="color: red;">Anonymization failed due to errors. See message above.</span>';
+        }
+    });
+
+</script>
+
+</body>
+</html>
